@@ -35,7 +35,7 @@ class RedditSearchTool(BaseTool):
     ) -> str:
         """Search Reddit and return the results."""
         reddit = RedditAPIWrapper()
-        return await reddit.search(query)
+        return await reddit.search(query, subreddit="all")
 
     async def send_event(self, send, response_streamer, data):
         pass
