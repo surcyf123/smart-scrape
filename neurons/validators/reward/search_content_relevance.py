@@ -151,14 +151,17 @@ class WebSearchContentRelevanceModel(BaseRewardModel):
                     link_scores.append(0)
                     continue
 
-                domain = url.split("/")[2].replace(
-                    "www.", ""
-                )  # Extract the domain from the URL and remove 'www.'
+                domain_parts = url.split("/")[2].split(".")
+                domain = ".".join(domain_parts[-2:])  # Extract the main domain
 
                 if domain in domain_to_search_result:
-                    link_scores.append(
-                        1 if url in str(domain_to_search_result[domain]) else 0
-                    )
+                    if (
+                        url in str(domain_to_search_result[domain])
+                        or url in google_search_results
+                    ):
+                        link_scores.append(1)
+                    else:
+                        link_scores.append(0)
                 else:
                     link_scores.append(1 if url in google_search_results else 0)
 
