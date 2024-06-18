@@ -8,12 +8,12 @@ import bittensor as bt
 import re
 import time
 from datura.utils import call_openai
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 from neurons.validators.utils.prompts import (
     extract_score_and_explanation,
 )
 from neurons.validators.utils.prompts import ScoringPrompt
-
+from datura.services.subnet_18_api_wrapper import Subnet18
 from enum import Enum
 import torch
 from transformers import pipeline
@@ -22,6 +22,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 EXPECTED_ACCESS_KEY = os.environ.get("EXPECTED_ACCESS_KEY", "hello")
 URL_SUBNET_18 = os.environ.get("URL_SUBNET_18")
+SUBNET_18_VALIDATOR_UID = os.environ.get("SUBNET_18_VALIDATOR_UID", "0")
 
 
 class ScoringSource(Enum):
@@ -32,12 +33,13 @@ class ScoringSource(Enum):
 
 
 class RewardLLM:
-    def __init__(self):
+    def __init__(self, wallet: bt.wallet):
         self.tokenizer = None
         self.model = None
         self.device = None
         self.pipe = None
         self.scoring_prompt = ScoringPrompt()
+        self.sn18 = Subnet18(wallet)
 
     def init_tokenizer(self, device, model_name):
         # https://huggingface.co/VMware/open-llama-7b-open-instruct
@@ -87,43 +89,31 @@ class RewardLLM:
 
         return text
 
-    def call_to_subnet_18_scoring(self, data):
-        start_time = time.time()  # Start timing for execution
+    async def get_score_by_subnet_18(self, messages):
         try:
-            if not URL_SUBNET_18:
-                bt.logging.warning(
-                    "Please set the URL_SUBNET_18 environment variable. See here: https://github.com/surcyf123/smart-scrape/blob/main/docs/env_variables.md"
-                )
-                return None
+            result = {}
+            start_time = time.time()
+            previous = 0
+            for message_dict in messages:
+                ((key, message_list),) = message_dict.items()
 
-            headers = {
-                "access-key": EXPECTED_ACCESS_KEY,
-                "Content-Type": "application/json",
-            }
-            response = requests.post(
-                url=f"{URL_SUBNET_18}/text-validator/",
-                headers=headers,
-                json=data,
-                timeout=10 * 60,  # Timeout after 10 minutes
-            )  # Using json parameter to automatically set the content-type to application/json
-
-            if response.status_code in [401, 403]:
-                bt.logging.error(f"Connection issue with Subnet 18: {response.text}")
-                return {}
-            if response.status_code != 200:
-                bt.logging.error(
-                    f"ERROR connect to Subnet 18: Status code: {response.status_code}"
+                miner_uid, current = self.sn18.get_miner_uid(previous)
+                previous = current
+                response = await self.sn18.query(
+                    messages=message_list,
+                    miner_uid=miner_uid,
+                    temperature=0.0001,
                 )
-                return None
-            execution_time = (
-                time.time() - start_time
-            ) / 60  # Calculate execution time in minutes
-            bt.logging.info(
-                f"Subnet 18 scoring call execution time: {execution_time:.2f} minutes"
-            )
-            return response
+                result[key] = response
+
+                # Calculate execution time in minutes
+                execution_time = (time.time() - start_time) / 60
+                bt.logging.info(
+                    f"Subnet 18 scoring call execution time: {execution_time:.2f} minutes"
+                )
+            return result
         except Exception as e:
-            bt.logging.warning(f"Error calling Subnet 18 scoring: {e}")
+            bt.logging.warning(f"Error processing Subnet 18 queries: {e}")
             return None
 
     async def get_score_by_openai(self, messages):
@@ -264,7 +254,8 @@ class RewardLLM:
         if source == ScoringSource.LocalZephyr:
             return self.get_score_by_zephyer(messages)
         if source == ScoringSource.Subnet18:
-            return self.call_to_subnet_18_scoring(messages)
+            loop = asyncio.get_event_loop_policy().get_event_loop()
+            return loop.run_until_complete(self.get_score_by_subnet_18(messages))
         elif source == ScoringSource.OpenAI:
             loop = asyncio.get_event_loop_policy().get_event_loop()
             return loop.run_until_complete(self.get_score_by_openai(messages=messages))
@@ -277,9 +268,9 @@ class RewardLLM:
 
         # Define the order of scoring sources to be used
         scoring_sources = [
+            ScoringSource.Subnet18,  # First attempt with Subnet 18
             ScoringSource.OpenAI,  # Attempt scoring with OpenAI
             # ScoringSource.LocalZephyr,  # Fallback to Local LLM if OpenAI fails
-            # ScoringSource.Subnet18,  # First attempt with Subnet 18
         ]
 
         # Attempt to score messages using the defined sources in order
@@ -293,23 +284,24 @@ class RewardLLM:
                 score_responses.update(current_score_responses)
 
                 # # Filter messages that still need scoring (i.e., messages that did not receive a score)
-                # messages = [
-                #     message
-                #     for (key, score_text), message in zip(
-                #         current_score_responses.items(), messages
-                #     )
-                #     if self.scoring_prompt.check_score_exists(score_text) is False
-                # ]
+                messages = [
+                    message
+                    for (key, score_text), message in zip(
+                        current_score_responses.items(), messages
+                    )
+                    if self.scoring_prompt.check_score_exists(score_text) is False
+                ]
 
                 # # If all messages have been scored, break out of the loop
-                # if not messages:
-                #     break
-                # else:
-                #     bt.logging.info(
-                #         f"{source} Attempt for scoring. Remaining messages: {len(messages)}"
-                #     )
+                if not messages:
+                    bt.logging.info("Messages are scored successfully")
+                    break
+                else:
+                    bt.logging.info(
+                        f"{source} Attempt for scoring. Remaining messages: {len(messages)}"
+                    )
             else:
-                bt.logging.info(
+                bt.logging.error(
                     f"Scoring with {source} failed or returned no results. Attempting next source."
                 )
 

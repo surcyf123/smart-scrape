@@ -60,7 +60,7 @@ class Neuron(AbstractNeuron):
 
         init_wandb(self)
 
-        self.scraper_validator = ScraperValidator(neuron=self)
+        self.scraper_validator = ScraperValidator(neuron=self, wallet=self.wallet)
         bt.logging.info("initialized_validators")
 
         # Init the event loop.
