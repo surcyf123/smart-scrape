@@ -6,11 +6,8 @@ import traceback
 import random
 import copy
 import bittensor as bt
-import datura.utils as utils
-import os
 import time
 import sys
-from typing import List
 from datura.protocol import IsAlive
 from neurons.validators.scraper_validator import ScraperValidator
 from config import add_args, check_config, config
@@ -60,7 +57,10 @@ class Neuron(AbstractNeuron):
 
         init_wandb(self)
 
-        self.scraper_validator = ScraperValidator(neuron=self)
+        self.scraper_validator = ScraperValidator(
+            neuron=self,
+            wallet=self.wallet
+        )
         bt.logging.info("initialized_validators")
 
         # Init the event loop.

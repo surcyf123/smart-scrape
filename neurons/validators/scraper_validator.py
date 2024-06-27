@@ -39,7 +39,7 @@ from datura.dataset.date_filters import (
 
 
 class ScraperValidator:
-    def __init__(self, neuron: AbstractNeuron):
+    def __init__(self, neuron: AbstractNeuron, wallet: bt.wallet):
         self.streaming = True
         self.query_type = "text"
         self.model = "gpt-3.5-turbo-0125"
@@ -63,6 +63,7 @@ class ScraperValidator:
         self.region = "us"
         self.date_filter = "qdr:w"  # Past week
         self.max_tools_result_amount = 10
+        self.wallet = wallet
 
         # Init device.
         bt.logging.debug("loading", "device")
@@ -87,7 +88,7 @@ class ScraperValidator:
             bt.logging.error(message)
             raise Exception(message)
 
-        self.reward_llm = RewardLLM()
+        self.reward_llm = RewardLLM(wallet=self.wallet)
         if (
             self.neuron.config.reward.twitter_content_weight > 0
             or self.neuron.config.reward.summary_relevance_weight > 0
@@ -142,7 +143,7 @@ class ScraperValidator:
         language="en",
         region="us",
         google_date_filter="qdr:w",
-        response_order=ResponseOrder.SUMMARY_FIRST,
+        response_order=None,
     ):
         task_name = task.task_name
         prompt = task.compose_prompt()
@@ -176,7 +177,7 @@ class ScraperValidator:
             language=language,
             region=region,
             google_date_filter=google_date_filter,
-            response_order=response_order.value,
+            response_order=response_order,
         )
 
         # Make calls to the network with the prompt.
@@ -344,9 +345,9 @@ class ScraperValidator:
 
     async def query_and_score(self, strategy=QUERY_MINERS.RANDOM):
         try:
-            dataset = QuestionsDataset()
+            dataset = QuestionsDataset(wallet=self.wallet)
             tools = random.choice(self.tools)
-            prompt = await dataset.generate_new_question_with_openai(tools)
+            prompt = await dataset.generate_new_question(tools)
 
             task_name = "augment"
             task = TwitterTask(
@@ -369,6 +370,7 @@ class ScraperValidator:
                 language=self.language,
                 region=self.region,
                 google_date_filter=self.date_filter,
+                response_order=ResponseOrder.SUMMARY_FIRST.value,
             )
 
             final_synapses = []
@@ -396,6 +398,7 @@ class ScraperValidator:
             tools = query.get("tools", [])
             date_filter_type = query.get("date_filter", DateFilterType.PAST_WEEK.value)
             date_filter_type = DateFilterType(date_filter_type)
+            response_order = query.get('response_order', ResponseOrder.SUMMARY_FIRST.value)
 
             task_name = "augment"
             task = TwitterTask(
@@ -421,6 +424,7 @@ class ScraperValidator:
                 region=self.region,
                 date_filter=date_filter,
                 google_date_filter=self.date_filter,
+                response_order=response_order,
             )
             final_synapses = []
             for response in async_responses:

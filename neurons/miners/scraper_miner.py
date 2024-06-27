@@ -1,7 +1,7 @@
 import traceback
 import bittensor as bt
 from starlette.types import Send
-from datura.dataset.tool_return import response_order_to_str
+from datura.dataset.tool_return import response_order_from_str
 from datura.protocol import (
     ScraperStreamingSynapse,
 )
@@ -26,7 +26,7 @@ class ScraperMiner:
             seed = synapse.seed
             tools = synapse.tools
             is_intro_text = synapse.is_intro_text
-            response_order = response_order_to_str(synapse.response_order)
+            response_order = response_order_from_str(synapse.response_order)
 
             bt.logging.trace(synapse)
 

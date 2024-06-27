@@ -6,7 +6,7 @@ class ResponseOrder(Enum):
     SUMMARY_FIRST = "SUMMARY_FIRST"
 
 
-def response_order_to_str(value: str) -> ResponseOrder:
+def response_order_from_str(value: str) -> ResponseOrder:
     if value == "LINK_FIRST":
         return ResponseOrder.LINKS_FIRST
     else:

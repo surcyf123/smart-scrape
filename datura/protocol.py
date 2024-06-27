@@ -281,7 +281,7 @@ class ScraperStreamingSynapse(bt.StreamingSynapse):
     response_order: Optional[str] = pydantic.Field(
         "",
         title="Response Order",
-        description="Preffered order type of response, by default it will be SUMMARY_FIRST",
+        description="Preferred order type of response, by default it will be SUMMARY_FIRST",
     )
 
     def set_prompt_analysis(self, data: any):

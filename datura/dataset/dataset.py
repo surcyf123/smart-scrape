@@ -6,6 +6,7 @@ from bs4 import BeautifulSoup
 import time
 import requests
 import html
+from datura.services.subnet_18_api_wrapper import Subnet18
 from datura.utils import call_openai
 import json
 
@@ -1226,7 +1227,8 @@ class StackOverflowDataset:
             "sort": "votes",  # Sorting by votes means that it's likely that the same questions will be fetched again
             "site": "stackoverflow",
             "pagesize": 100,  # Fetch 100 questions per API call
-            "page": random.randint(1, 25),  # Max 25 questions allowed on free API
+            # Max 25 questions allowed on free API
+            "page": random.randint(1, 25),
         }
 
         # Fetch questions
@@ -1238,7 +1240,8 @@ class StackOverflowDataset:
 
         # Filter questions by minimum upvotes
         min_upvotes = 10
-        filtered_questions = [q for q in questions if q["score"] >= min_upvotes]
+        filtered_questions = [
+            q for q in questions if q["score"] >= min_upvotes]
         # Shuffle the questions
         random.shuffle(filtered_questions)
 
@@ -1272,15 +1275,21 @@ class MockDiscordQuestionsDataset:
             "What are the Hyper parameters of subnet 22?",  # hyper parameters in:22
             "What people are talking about TAO wallet?",  # TAO wallet
             "Axon configurations in translation subnet",  # axon config in:translation
-            "What are the recent discussions about the new bittensor server update?",  # bittensor server update
-            "How do I configure my axon for the image classification subnet?",  # axon image classification
+            # bittensor server update
+            "What are the recent discussions about the new bittensor server update?",
+            # axon image classification
+            "How do I configure my axon for the image classification subnet?",
             "What are people saying about the new Datura tokenomics proposal?",  # datura tokenomics
             "Has there been any news on the upcoming Bittensor hackathon?",  # bittensor hackathon
-            "What are the system requirements for running a full datura node?",  # system requirements chi model
+            # system requirements chi model
+            "What are the system requirements for running a full datura node?",
             "How can I stake my TAO tokens and earn rewards?",  # stake tao tokens
-            "What are the latest performance benchmarks for different subnet configurations?",  # performance benchmarks days_before:3d
-            "Are there any updates on the integration with other AI platforms?",  # bittensor integrations
-            "What's the best way to contribute to the Bittensor codebase as a developer?",  # contribute bittensor codebase
+            # performance benchmarks days_before:3d
+            "What are the latest performance benchmarks for different subnet configurations?",
+            # bittensor integrations
+            "Are there any updates on the integration with other AI platforms?",
+            # contribute bittensor codebase
+            "What's the best way to contribute to the Bittensor codebase as a developer?",
             "What people discussed today?",  # days_before:1d
             "How can we deploy a subnet",  # subnet deployment or deploy subnet
             "Test network",  # test network
@@ -1323,7 +1332,8 @@ class MockBittensiorQuestionsDataset:
 
 
 class QuestionsDataset:
-    def __init__(self) -> None:
+    def __init__(self, wallet) -> None:
+        self.wallet = wallet
         self.datasets = [
             MockTwitterQuestionsDataset(),
             MockTwitterQuestionsDataset(),
@@ -1331,6 +1341,49 @@ class QuestionsDataset:
             MockTwitterQuestionsDataset(),
             StackOverflowDataset(),
         ]
+
+    async def generate_new_question(self, selected_tools):
+        try:
+            response = await self.generate_new_question_with_subnet_18()
+            return response
+        except Exception as e:
+            bt.logging.error(
+                f"Cannot generate question with subnet 18, switching to open ai: {e}")
+            response = await self.generate_new_question_with_openai(selected_tools)
+            return response
+
+    async def generate_new_question_with_subnet_18(self):
+        # Select a random dataset and get the next question
+        original_question = self.next()
+
+        # Extract the topic from the original question
+        topic = (
+            original_question.split("{}")[0]
+            if "{}" in original_question
+            else original_question
+        )
+
+        # Prepare a simpler prompt for OpenAI
+        prompt = f"Create a simple and straightforward question about '{topic}' that is 5 to 14 words long."
+        bt.logging.warning(f"Topic: {topic}")
+
+        sn18 = Subnet18(wallet=self.wallet)
+        try:
+            # Make the call to Subnet 18 query call with the new question
+            new_question = await sn18.query(
+                messages=[{"role": "system", "content": prompt}],
+                temperature=0.3,  # Lower temperature for less creativity and more straightforward output
+                model="gpt-3.5-turbo-0125",
+                miner_uid=sn18.get_random_miner_uid(),
+            )
+
+            # Check if new_question is None or an empty string
+            if not new_question:
+                return original_question
+            return new_question.strip()
+        except Exception as e:
+            print(f"Failed to call Subnet 18: {e}")
+            return original_question
 
     async def generate_new_question_with_openai(self, selected_tools):
         # Select a random dataset and get the next question
@@ -1344,7 +1397,8 @@ class QuestionsDataset:
         )
 
         # Convert the list of tools into a string to include in the prompt
-        tools_str = ", ".join(selected_tools)
+        # INFO: Not used
+        # tools_str = ", ".join(selected_tools)
 
         # Prepare a simpler prompt for OpenAI
         prompt = f"Create a simple and straightforward question about '{topic}' that is 5 to 14 words long."
